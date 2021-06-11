@@ -1518,6 +1518,19 @@ pkcs11_register_provider(char *provider_id, char *pin,
 	CK_FUNCTION_LIST *f = NULL;
 	CK_TOKEN_INFO *token;
 	CK_ULONG i;
+	char *provider_path, *provider_label;
+
+	provider_path = xstrdup(provider_id);
+	provider_label = strstr(provider_path, "//");
+	if (provider_label != NULL) {
+	    provider_label[0] = '\0';         /* truncate shlib path */
+	    provider_label += 2;              /* skip past "//" */
+	    if (provider_label[0] == '\0') {  /* ignore empty label */
+		provider_label = NULL;
+	    }
+	}
+	debug2("provider_id [%s] path [%s] label [%s]",
+	       provider_id, provider_path, provider_label);
 
 	if (providerp == NULL)
 		goto fail;
@@ -1533,7 +1546,7 @@ pkcs11_register_provider(char *provider_id, char *pin,
 		goto fail;
 	}
 	/* open shared pkcs11-library */
-	if ((handle = dlopen(provider_id, RTLD_NOW)) == NULL) {
+	if ((handle = dlopen(provider_path, RTLD_NOW)) == NULL) {
 		error("dlopen %s failed: %s", provider_id, dlerror());
 		goto fail;
 	}
@@ -1551,7 +1564,8 @@ pkcs11_register_provider(char *provider_id, char *pin,
 		goto fail;
 	}
 	p->function_list = f;
-	if ((rv = f->C_Initialize(NULL)) != CKR_OK) {
+	rv = f->C_Initialize(NULL);
+	if (rv != CKR_OK && rv != CKR_CRYPTOKI_ALREADY_INITIALIZED) {
 		error("C_Initialize for provider %s failed: %lu",
 		    provider_id, rv);
 		goto fail;
@@ -1614,6 +1628,13 @@ pkcs11_register_provider(char *provider_id, char *pin,
 		    provider_id, (unsigned long)i,
 		    token->label, token->manufacturerID, token->model,
 		    token->serialNumber, token->flags);
+		if (provider_label != NULL &&
+		    strcmp(token->label, provider_label) != 0) {
+			debug2("%s: ignoring token in "
+			       "provider %s slot %lu due to label mismatch",
+			       __func__, provider_id, (unsigned long)i);
+			continue;
+		}
 		/*
 		 * open session, login with pin and retrieve public
 		 * keys (if keyp is provided)
@@ -1644,9 +1665,11 @@ pkcs11_register_provider(char *provider_id, char *pin,
 
 	TAILQ_INSERT_TAIL(&pkcs11_providers, p, next);
 	p->refcount++;	/* add to provider list */
+	free(provider_path);
 
 	return (nkeys);
 fail:
+	free(provider_path);
 	if (need_finalize && (rv = f->C_Finalize(NULL)) != CKR_OK)
 		error("C_Finalize for provider %s failed: %lu",
 		    provider_id, rv);

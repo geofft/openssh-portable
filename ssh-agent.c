@@ -1390,6 +1390,7 @@ process_add_smartcard_key(SocketEntry *e)
 	Identity *id;
 	struct dest_constraint *dest_constraints = NULL;
 	size_t ndest_constraints = 0;
+	char *slashslash, *full_provider = NULL;
 
 	debug2_f("entering");
 	if ((r = sshbuf_get_cstring(e->request, &provider, NULL)) != 0 ||
@@ -1401,6 +1402,17 @@ process_add_smartcard_key(SocketEntry *e)
 	    NULL, &dest_constraints, &ndest_constraints) != 0) {
 		error_f("failed to parse constraints");
 		goto send;
+	}
+	/*
+	 * Pare off any "//" trailer (longest match) which specifies a
+	 * token label, so it can be put back after canonicalization
+	 * is done.  This is safe because the helper will pare it off
+	 * (and never put it back) before calling dlopen().
+	 */
+	slashslash = strstr(provider, "//");
+	if (slashslash != NULL) {
+		slashslash[0] = '\0';
+		slashslash += 2;
 	}
 	if (realpath(provider, canonical_provider) == NULL) {
 		verbose("failed PKCS#11 add of \"%.100s\": realpath: %s",
@@ -1416,7 +1428,16 @@ process_add_smartcard_key(SocketEntry *e)
 	if (lifetime && !death)
 		death = monotime() + lifetime;
 
-	count = pkcs11_add_provider(canonical_provider, pin, &keys, &comments);
+	if (slashslash == NULL) {
+	    full_provider = canonical_provider;
+	} else {
+	    int l = strlen(canonical_provider) + strlen("//") +
+		strlen(slashslash) + 1;
+	    full_provider = xcalloc(l, 1);
+	    snprintf(full_provider, l, "%s%s%s",
+		     canonical_provider, "//", slashslash);
+	}
+	count = pkcs11_add_provider(full_provider, pin, &keys, &comments);
 	for (i = 0; i < count; i++) {
 		k = keys[i];
 		if (lookup_identity(k) == NULL) {
@@ -1445,6 +1466,8 @@ process_add_smartcard_key(SocketEntry *e)
 		free(comments[i]);
 	}
 send:
+	if (full_provider != canonical_provider)
+		free(full_provider);
 	free(pin);
 	free(provider);
 	free(keys);
