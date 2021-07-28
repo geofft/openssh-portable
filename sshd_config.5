@@ -1022,6 +1022,13 @@ Multiple
 options are permitted.
 For more information on routing domains, see
 .Xr rdomain 4 .
+.It Cm LogCommands
+Log the actual command executed by each "command" (non-interactive) session.
+Also enables session open/close and session type logging at the default
+.Cm LogLevel .
+.Pp
+To preserve privacy, the default is
+.Cm no .
 .It Cm LoginGraceTime
 The server disconnects after this time if the user has not
 successfully logged in.

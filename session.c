@@ -686,8 +686,14 @@ do_exec(struct ssh *ssh, Session *s, const char *command)
 	} else if (command == NULL) {
 		snprintf(session_type, sizeof(session_type), "shell");
 	} else {
-		/* NB. we don't log unforced commands to preserve privacy */
-		snprintf(session_type, sizeof(session_type), "command");
+		/* We log unforced commands only if expressly so configured. */
+		if (options.log_commands) {
+			snprintf(session_type, sizeof(session_type),
+				"command '%.900s'", command);
+		} else {
+			snprintf(session_type, sizeof(session_type),
+				"command");
+		}
 	}
 
 	if (s->ttyfd != -1) {
@@ -696,14 +702,26 @@ do_exec(struct ssh *ssh, Session *s, const char *command)
 			tty += 5;
 	}
 
-	verbose("Starting session: %s%s%s for %s from %.200s port %d id %d",
-	    session_type,
-	    tty == NULL ? "" : " on ",
-	    tty == NULL ? "" : tty,
-	    s->pw->pw_name,
-	    ssh_remote_ipaddr(ssh),
-	    ssh_remote_port(ssh),
-	    s->self);
+	if (options.log_commands) {
+		logit("Starting session: %s%s%s for %s from %.200s "
+			"port %d id %d",
+			session_type,
+			tty == NULL ? "" : " on ",
+			tty == NULL ? "" : tty,
+			s->pw->pw_name,
+			ssh_remote_ipaddr(ssh),
+			ssh_remote_port(ssh),
+			s->self);
+	} else {
+		verbose("Starting session: %s%s%s for %s from %.200s port %d id %d",
+			session_type,
+			tty == NULL ? "" : " on ",
+			tty == NULL ? "" : tty,
+			s->pw->pw_name,
+			ssh_remote_ipaddr(ssh),
+			ssh_remote_port(ssh),
+			s->self);
+	}
 
 #ifdef SSH_AUDIT_EVENTS
 	if (command != NULL)

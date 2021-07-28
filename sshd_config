@@ -25,6 +25,7 @@
 # Logging
 #SyslogFacility AUTH
 #LogLevel INFO
+#LogCommands no
 
 # Authentication:
 
